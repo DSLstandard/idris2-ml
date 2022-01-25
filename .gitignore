@@ -22,4 +22,4 @@ tags
 # ---> Idris
 *.ibc
 *.o
-
+build/
