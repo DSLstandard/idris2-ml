@@ -50,7 +50,14 @@ export
 op_recip : (Neg a, Fractional a) => Op [a] a
 op_recip = MkOp $ \[x] => (recip x, \d => [-d / (x * x)])
 
--- Double exponential
+-- Ord interface
+
+export
+op_max, op_min : (Num a, Ord a) => Op [a, a] a
+op_max = MkOp $ \[x, y] => (max x y, \d => [d * if x > y then 1 else 0, d * if y > x then 1 else 0])
+op_min = MkOp $ \[x, y] => (min x y, \d => [d * if x < y then 1 else 0, d * if y < x then 1 else 0])
+
+-- Double related
 
 export
 op_pow : Op [Double, Double] Double
@@ -67,26 +74,18 @@ export
 op_exp : Op [Double] Double
 op_exp = MkOp $ \[i] => (exp i, \d => [d * exp i])
 
--- Double logarithm
+export
+op_ln : Op [Double] Double
+op_ln = MkOp $ \[x] => (log x, \d => [d / x])
 
 export
-op_log : Op [Double] Double
-op_log = MkOp $ \[x] => (log x, \d => [d / x])
-
--- Double trigo
-
-export
-op_sin : Op [Double] Double
+op_sin, op_cos, op_tan, op_asin, op_acos, op_atan, op_sinh, op_cosh, op_tanh : Op [Double] Double
 op_sin = MkOp $ \[x] => (sin x, \d => [d * cos x])
-
-export
-op_cos : Op [Double] Double
 op_cos = MkOp $ \[x] => (cos x, \d => [d * -sin x])
-
-export
-op_tan : Op [Double] Double
-op_tan = MkOp $ \[x] => let cos' = cos x in (tan x, \d => [d / cos'])
-
-export
-op_atan : Op [Double] Double
+op_tan = MkOp $ \[x] => (tan x, \d => let cos' = cos x in [d / (cos' * cos')])
+op_asin = MkOp $ \[x] => (asin x, \d => [d / sqrt (1 - x * x)])
+op_acos = MkOp $ \[x] => (acos x, \d => [-d / sqrt (1 - x * x)])
 op_atan = MkOp $ \[x] => (atan x, \d => [d / (1 - x * x)])
+op_sinh = MkOp $ \[x] => (sinh x, \d => [d * cosh x])
+op_cosh = MkOp $ \[x] => (cosh x, \d => [d * sinh x])
+op_tanh = MkOp $ \[x] => (tanh x, \d => let cosh' = cosh x in [d / (cosh' * cosh')])
