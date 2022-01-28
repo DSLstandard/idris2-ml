@@ -29,9 +29,16 @@ op_negate = MkOp $ \[x] => (-x, \g => [-g])
 
 -- Abs interface
 
+||| when x < 0, return -1
+||| when x > 0, return +1
+||| otherwise, return 0
 export
-op_abs : Abs a => Op [a] a
-op_abs = MkOp $ \[x] => (abs x, ?op_abs_back)
+signum_zero : (Neg a, Ord a) => a -> a
+signum_zero x = if x > 0 then 1 else if x < 0 then -1 else 0
+
+export
+op_abs : (Neg a, Ord a, Abs a) => Op [a] a
+op_abs = MkOp $ \[x] => (abs x, \d => [d * signum_zero x])
 
 -- Fractional interface
 
