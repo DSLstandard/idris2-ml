@@ -1,47 +1,7 @@
 module Backprop
 
-||| `D a` means its related to gradients or derivatives
-public export
-D : Type -> Type
-D a = a
-
-record Op1 i o where
-  constructor MkOp1
-  run_op1 : i -> (o, D o -> D i)
-
-record Op2 i1 i2 o where
-  constructor MkOp2
-  run_op2 : i1 -> i2 -> (o, D o -> (D i1, D i2))
-
-op_square : Num a => Op1 a a
-op_square = MkOp1 $ \x => (x * x, \d => d * 2 * x)
-
-op_sin : Op1 Double Double
-op_sin = MkOp1 $ \x => (sin x, \d => d * cos x)
-
-op_add : Num a => Op2 a a a
-op_add = MkOp2 $ \x, y => (x + y, \d => (d, d))
-
-op_sub : Neg a => Op2 a a a
-op_sub = MkOp2 $ \x, y => (x - y, \d => (d, -d))
-
-op_mul : Num a => Op2 a a a
-op_mul = MkOp2 $ \x, y => (x * y, \d => (d * y, x * d))
-
-op_exp : Op1 Double Double
-op_exp = MkOp1 $ \i => (exp i, \d => d * exp i)
-
-op_div : (Neg a, Fractional a) => Op2 a a a
-op_div = MkOp2 $ \x, y => (x / y, \d => (d / y, -d * x / (y * y)))
-
-op_recip : (Neg a, Fractional a) => Op1 a a
-op_recip = MkOp1 $ \x => (recip x, \d => -d / (x * x))
-
-op_negate : Neg a => Op1 a a
-op_negate = MkOp1 $ \x => (-x, \g => -g)
-
-op_abs : Abs a => Op1 a a
-op_abs = MkOp1 $ \x => (abs x, ?signum)
+import public Data.List.Quantifiers
+import Backprop.Op
 
 public export
 data IElem : Nat -> a -> List a -> Type where
@@ -66,20 +26,17 @@ Num a => Backprop a where
   zero = 0
   add = (+)
 
-public export
-Backprops : List Type -> Type
-Backprops [] = ()
-Backprops (x :: xs) = (Backprop x, Backprops xs)
-
--- graph
-
-||| inputs: a list of the types of the parameters
-export
-data BVar : (inputs : List Type) -> (a : Type) -> Type where
-  Input : {i : _} -> (0 _ : IElem i a s) -> BVar s a
-  Const : a -> BVar s a
-  Oper1 : Backprop i => Backprop o => Op1 i o -> BVar s i -> BVar s o
-  Oper2 : Backprop i1 => Backprop i2 => Backprop o => Op2 i1 i2 o -> BVar s i1 -> BVar s i2 -> BVar s o
+mutual
+  ||| s : a list of the types of the parameters
+  ||| a : output type
+  export
+  data BVar : (s : List Type) -> (a : Type) -> Type where
+    ||| an input
+    Input : {i : _} -> (0 _ : IElem i a s) -> BVar s a
+    ||| a constant
+    Const : a -> BVar s a
+    ||| a operation
+    Oper : All Backprop is => Op is o -> All (BVar s) is -> BVar s o
 
 export
 at : {i : _} -> (0 _ : IElem i a s) -> BVar s a
@@ -91,75 +48,75 @@ FromDouble a => FromDouble (BVar s a) where
 
 export
 (Backprop a, Num a) => Num (BVar s a) where
-  (+) = Oper2 op_add
-  (*) = Oper2 op_mul
+  a + b = Oper op_add [a, b]
+  a * b = Oper op_mul [a, b]
   fromInteger = Const . fromInteger
 
 export
 (Backprop a, Neg a) => Neg (BVar s a) where
-  negate = Oper1 op_negate
-  (-) = Oper2 op_sub
+  a - b = Oper op_sub [a, b]
+  negate a = Oper op_negate [a]
 
 export
 (Backprop a, Neg a, Fractional a) => Fractional (BVar s a) where
-  (/) = Oper2 op_div
-  recip = Oper1 op_recip
+  a / b = Oper op_div [a, b]
+  recip a = Oper op_recip [a]
 
 export
 (Backprop a, Abs a) => Abs (BVar s a) where
-  abs = Oper1 op_abs
+  abs a = Oper op_abs [a]
 
 export
 sin : BVar s Double -> BVar s Double
-sin = Oper1 op_sin
+sin a = Oper op_sin [a]
 
 export
 exp : BVar s Double -> BVar s Double
-exp = Oper1 op_exp
+exp a = Oper op_exp [a]
 
 export
 sigmoid : BVar s Double -> BVar s Double
 sigmoid x = 1 / (1 + exp (-x))
 
-public export
-In : List Type -> Type
-In [] = ()
-In (x :: xs) = Pair x (In xs)
+get : {i : _} -> (0 _ : IElem i a s) -> HList s -> a
+get Here (x :: xs) = x
+get (There ptr) (x :: xs) = get ptr xs
 
-get : {i : _} -> (0 _ : IElem i a s) -> In s -> a
-get Here (x, xs) = x
-get (There ptr) (x, xs) = get ptr xs
+zeros : {auto prf : All Backprop s} -> HList s
+zeros {prf = []} = []
+zeros {prf = prf :: prfs} = zero :: zeros
 
-zeros : {s : _} -> Backprops s => In s
-zeros {s = []} = ()
-zeros {s = a :: as} = (zero, zeros)
+inject : {auto prf : All Backprop s} -> {i : _} -> (0 _ : IElem i a s) -> a -> HList s
+inject {prf = prf :: prfs} Here x = x :: zeros
+inject {prf = prf :: prfs} (There ptr) x = zero :: inject ptr x
 
-inject : {s : _} -> Backprops s => {i : _} -> (0 _ : IElem i a s) -> a -> In s
-inject Here x = (x, zeros)
-inject (There ptr) x = (zero, inject ptr x)
+combine : {auto prf : All Backprop s} -> HList s -> HList s -> HList s
+combine {prf = []} [] [] = []
+combine {prf = prf :: prfs} (x :: xs) (y :: ys) = add x y :: combine xs ys
 
-combine : {s : _} -> Backprops s => In s -> In s -> In s
-combine {s = []} () () = ()
-combine {s = a :: as} (x, xs) (y, ys) = (add x y, combine xs ys)
+mutual
+  runs : All Backprop s => {auto prf : All Backprop is} -> HList s
+    -> All (BVar s) is
+    -> (HList is, All (\b => b -> HList s) is)
+    -- -> All (\b => (b, b -> HList s)) is
+  runs ins [] = ([], [])
+  runs {prf = prf :: prfs} ins (i :: is) = let (x, y) = run ins i in bimap (x ::) (y ::) (runs ins is)
+
+  combines : All Backprop s => (backs : All (\b => b -> HList s) is) -> HList is -> HList s
+  combines [] [] = zeros
+  combines (back :: backs) (x :: xs) = back x `combine` combines backs xs
+
+  export
+  run : All Backprop s => Backprop a => HList s -> BVar s a -> (a, a -> HList s)
+  run ins (Input ptr) = (get ptr ins, inject ptr)
+  run ins (Const x) = (x, const zeros)
+  run ins (Oper op is) =
+    let
+      (is, backs) = runs ins is
+      (forth, back) = do_op op is
+    in
+      (forth, combines backs . back)
 
 export
-run : {s : _} -> (Backprop a, Backprops s) => In s -> BVar s a -> (a, D a -> D (In s))
-run ins (Input ptr) = (get ptr ins, inject ptr)
-run ins (Const x) = (x, const zeros)
-run ins (Oper1 op i) =
-  let
-    (i, back1) = run ins i
-    (forth, back) = run_op1 op i
-  in
-    (forth, back1 . back)
-run ins (Oper2 op i1 i2) =
-  let
-    (i1, back1) = run ins i1
-    (i2, back2) = run ins i2
-    (forth, back) = run_op2 op i1 i2
-  in
-    (forth, uncurry combine . bimap back1 back2 . back)
-
-export
-backprop : {s : _} -> (Backprop a, Backprops s) => In s -> BVar s a -> (a, D (In s))
+backprop : {s : _} -> (Backprop a, All Backprop s) => HList s -> BVar s a -> (a, HList s)
 backprop ins x = let (y, back) = run ins x in (y, back one)
