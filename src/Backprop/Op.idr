@@ -1,11 +1,22 @@
 module Backprop.Op
 
+import Backprop.CanBack
+import Control.Optics
+import Debug.Trace
 import public Data.List.Quantifiers
 
 public export
 record Op (is : List Type) (o : Type) where
   constructor MkOp
   do_op : HList is -> Pair o (o -> HList is)
+
+export
+op_const : a -> Op [] a
+op_const x = MkOp $ \[] => (x, const [])
+
+export
+op_view : {b : _} -> CanBack a => Simple Lens a b -> Op [a] b
+op_view l = MkOp $ \[x] => (x ^. l, \d => [set l d zero])
 
 -- Num operation
 

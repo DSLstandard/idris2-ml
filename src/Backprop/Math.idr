@@ -1,35 +1,46 @@
 module Backprop.Math
 
+import Backprop.CanBack
 import Backprop.Core
 import Backprop.Op
+import Control.Optics
 
 export
-max, min : (Num a, Ord a) => BVar s a -> BVar s a -> BVar s a
+view : {a, b : _} -> CanBack a => Simple Lens a b -> Node i a -> Node i b
+view l x = op (op_view l) [x]
+
+infixl 0 ^.
+export
+(^.) : {a, b : _} -> CanBack a => Node i a -> Simple Lens a b -> Node i b
+x ^. l = view l x
+
+export
+max, min : {a : _} -> (CanBack a, Num a, Ord a) => Node i a -> Node i a -> Node i a
 max a b = op op_max [a, b]
 min a b = op op_min [a, b]
 
 export
-sqrt : BVar s Double -> BVar s Double
+sqrt : Node i Double -> Node i Double
 sqrt x = op op_sqrt [x]
 
 export
-pow : BVar s Double -> BVar s Double -> BVar s Double
+pow : Node i Double -> Node i Double -> Node i Double
 pow x y = op op_pow [x, y]
 
 export
-exp : BVar s Double -> BVar s Double
+exp : Node i Double -> Node i Double
 exp x = op op_exp [x]
 
 export
-ln : BVar s Double -> BVar s Double
+ln : Node i Double -> Node i Double
 ln x = op op_ln [x]
 
 export
-log : (base : BVar s Double) -> BVar s Double -> BVar s Double
+log : (base : Node i Double) -> Node i Double -> Node i Double
 log base x = ln x / ln base
 
 export
-sin, cos, tan, asin, acos, atan, sinh, cosh, tanh : BVar s Double -> BVar s Double
+sin, cos, tan, asin, acos, atan, sinh, cosh, tanh : Node i Double -> Node i Double
 sin x = op op_sin [x]
 cos x = op op_cos [x]
 tan x = op op_tan [x]
@@ -43,15 +54,15 @@ tanh x = op op_tanh [x]
 -- machine learning specific
 
 export
-sigmoid : BVar s Double -> BVar s Double
+sigmoid : Node i Double -> Node i Double
 sigmoid x = 1 / (1 + exp (-x))
 
 export
-relu : BVar s Double -> BVar s Double
+relu : Node i Double -> Node i Double
 relu x = max 0 x
 
 ||| intergral power
 export
-power : Num a => BVar s a -> Nat -> BVar s a
+power : {a : _} -> (CanBack a, Num a) => Node i a -> Nat -> Node i a
 power x Z = 1
 power x (S i) = x * power x i
