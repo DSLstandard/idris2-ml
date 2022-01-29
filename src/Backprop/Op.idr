@@ -59,11 +59,16 @@ op_min = MkOp $ \[x, y] => (min x y, \d => [d * if x < y then 1 else 0, d * if y
 
 -- Double related
 
+||| fix for `pow` when `pow (-1) 2` returns `+nan.0`
+export
+pow' : Double -> Double -> Double
+pow' x y = exp (y * log x)
+
 export
 op_pow : Op [Double, Double] Double
 op_pow = MkOp $ \[x, y] =>
   ( pow x y
-  , \d => let k = d * pow x (y - 1) in [k * y, k * x * log x]
+  , \d => let k = d * pow' x (y - 1) in [k * y, k * x * log x]
   )
 
 export

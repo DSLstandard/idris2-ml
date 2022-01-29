@@ -49,3 +49,9 @@ sigmoid x = 1 / (1 + exp (-x))
 export
 relu : BVar s Double -> BVar s Double
 relu x = max 0 x
+
+||| intergral power
+export
+power : Num a => BVar s a -> Nat -> BVar s a
+power x Z = 1
+power x (S i) = x * power x i

@@ -1,7 +1,8 @@
 module Backprop.Core
 
-import public Data.List.Quantifiers
 import Backprop.Op
+import Linear.HList
+import public Data.List.Quantifiers
 
 namespace IElem
   public export
@@ -45,10 +46,16 @@ interface Backprop a where
   add : a -> a -> a
 
 export
-Num a => Backprop a where
+Backprop Double where
   one = 1
   zero = 0
   add = (+)
+
+-- export
+-- Num a => Backprop a where
+--   one = 1
+--   zero = 0
+--   add = (+)
 
 mutual
   ||| s : a list of the types of the parameters
@@ -108,24 +115,43 @@ export
 (Backprop a, Ord a, Neg a, Abs a) => Abs (BVar s a) where
   abs a = op op_abs [a]
 
-(Backprop a, Num a) => Backprop (BVar s a) where
-  zero = lift zero
-  one = lift one
+export
+Num a => Backprop (BVar s a) where
+  one = 1
+  zero = 0
   add = (+)
 
-zeros : {auto prf : All Backprop s} -> HList s
-zeros {prf = []} = []
-zeros {prf = prf :: prfs} = zero :: zeros
+-- export
+-- (Backprop a, Num a) => Backprop (BVar s a) where
+--   zero = lift zero
+--   one = lift one
+--   add = (+)
+
+export
+Backprop (HList []) where
+  zero = []
+  one = []
+  add [] [] = []
+
+export
+Backprop a => Backprop (HList as) => Backprop (HList (a :: as)) where
+  zero = zero :: zero
+  one = one :: one
+  add (x :: xs) (y :: ys) = add x y :: add xs ys
+
+export
+(prf : All Backprop as) => Backprop (HList as) where
+  zero {prf = []} = []
+  zero {prf = prf :: prfs} = zero :: zero
+  one {prf = []} = []
+  one {prf = prf :: prfs} = one :: one
+  add [] [] = []
+  add {prf = prf :: prfs} (x :: xs) (y :: ys) = add x y :: add xs ys
 
 ||| create a input gradient only for a specific input
 inject : {auto prf : All Backprop s} -> {i : _} -> (0 _ : IElem i a s) -> a -> HList s
-inject {prf = prf :: prfs} Here x = x :: zeros
+inject {prf = prf :: prfs} Here x = x :: zero
 inject {prf = prf :: prfs} (There ptr) x = zero :: inject ptr x
-
-||| combine two input gradients together by adding them pairwise
-combine : {auto prf : All Backprop s} -> HList s -> HList s -> HList s
-combine {prf = []} [] [] = []
-combine {prf = prf :: prfs} (x :: xs) (y :: ys) = add x y :: combine xs ys
 
 ||| get a specific input
 get : {i : _} -> (0 _ : IElem i a s) -> HList s -> a
@@ -136,32 +162,51 @@ mutual
   runs : All Backprop s => {auto prf : All Backprop is} -> HList s
     -> All (BVar s) is
     -> (HList is, All (\b => b -> HList s) is)
-    -- -> All (\b => (b, b -> HList s)) is
   runs ins [] = ([], [])
   runs {prf = prf :: prfs} ins (i :: is) = let (x, y) = run ins i in bimap (x ::) (y ::) (runs ins is)
 
-  combines : All Backprop s => (backs : All (\b => b -> HList s) is) -> HList is -> HList s
-  combines [] [] = zeros
-  combines (back :: backs) (x :: xs) = back x `combine` combines backs xs
+  adds : All Backprop s => (backs : All (\b => b -> HList s) is) -> HList is -> HList s
+  adds [] [] = zero
+  adds (back :: backs) (x :: xs) = back x `add` adds backs xs
 
   ||| input: inputs, output node
   ||| output: (the value, the scaled gradient function of inputs)
   export
   run : All Backprop s => Backprop a => HList s -> BVar s a -> (a, a -> HList s)
   run ins (Input ptr) = (get ptr ins, inject ptr)
-  run ins (Const x) = (x, const zeros)
+  run ins (Const x) = (x, const zero)
   run ins (Oper op is) =
     let
       (is, backs) = runs ins is
       (forth, back) = do_op op is
     in
-      (forth, combines backs . back)
+      (forth, adds backs . back)
 
 ||| input: inputs, output node
 ||| output: (the value, the gradient of inputs)
 export
-backprop : {s : _} -> (Backprop a, All Backprop s) => HList s -> BVar s a -> (a, HList s)
+backprop : (Backprop a, All Backprop s) => HList s -> BVar s a -> (a, HList s)
 backprop ins x = let (y, back) = run ins x in (y, back one)
+
+||| `backprop` but discards output value
+export
+grad : (Backprop a, All Backprop s) => HList s -> BVar s a -> HList s
+grad ins x = snd $ backprop ins x
+
+mutual
+  evals : HList s -> All (BVar s) is -> HList is
+  evals ins [] = []
+  evals ins (i :: is) = eval ins i :: evals ins is
+
+  ||| evaluates a `BVar`, more efficient than `run` as gradient calculations are skipped
+  |||
+  ||| input: inputs, output node
+  ||| output: output value
+  export
+  eval : HList s -> BVar s a -> a
+  eval ins (Input ptr) = get ptr ins
+  eval ins (Const x) = x
+  eval ins (Oper op is) = fst $ do_op op (evals ins is)
 
 ||| get all inputs under `s`
 export
