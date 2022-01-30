@@ -2,12 +2,11 @@ module Backprop.Math
 
 import Backprop.CanBack
 import Backprop.Core
-import Backprop.Op
 import Control.Optics
 
 export
 view : {a, b : _} -> CanBack a => Simple Lens a b -> Node i a -> Node i b
-view l x = op (op_view l) [x]
+view l = op1 $ \[x] => (x ^. l, \d => [set l d zero])
 
 infixl 0 ^.
 export
@@ -16,24 +15,27 @@ x ^. l = view l x
 
 export
 max, min : {a : _} -> (CanBack a, Num a, Ord a) => Node i a -> Node i a -> Node i a
-max a b = op op_max [a, b]
-min a b = op op_min [a, b]
+max = op2 $ \[x, y] => (max x y, \d => [d * if x > y then 1 else 0, d * if y > x then 1 else 0])
+min = op2 $ \[x, y] => (min x y, \d => [d * if x < y then 1 else 0, d * if y < x then 1 else 0])
 
 export
 sqrt : Node i Double -> Node i Double
-sqrt x = op op_sqrt [x]
+sqrt = op1 $ \[x] => (sqrt x, \d => [d / (2 * sqrt x)])
 
 export
 pow : Node i Double -> Node i Double -> Node i Double
-pow x y = op op_pow [x, y]
+pow = op2 $ \[x, y] =>
+  ( pow x y
+  , \d => let k = d * pow x (y - 1) in [k * y, k * x * log x]
+  )
 
 export
 exp : Node i Double -> Node i Double
-exp x = op op_exp [x]
+exp = op1 $ \[x] => (exp x, \d => [d * exp x])
 
 export
 ln : Node i Double -> Node i Double
-ln x = op op_ln [x]
+ln = op1 $ \[x] => (log x, \d => [d / x])
 
 export
 log : (base : Node i Double) -> Node i Double -> Node i Double
@@ -41,15 +43,15 @@ log base x = ln x / ln base
 
 export
 sin, cos, tan, asin, acos, atan, sinh, cosh, tanh : Node i Double -> Node i Double
-sin x = op op_sin [x]
-cos x = op op_cos [x]
-tan x = op op_tan [x]
-asin x = op op_asin [x]
-acos x = op op_acos [x]
-atan x = op op_atan [x]
-sinh x = op op_sinh [x]
-cosh x = op op_cosh [x]
-tanh x = op op_tanh [x]
+sin = op1 $ \[x] => (sin x, \d => [d * cos x])
+cos = op1 $ \[x] => (cos x, \d => [d * -sin x])
+tan = op1 $ \[x] => (tan x, \d => let cos' = cos x in [d / (cos' * cos')])
+asin = op1 $ \[x] => (asin x, \d => [d / sqrt (1 - x * x)])
+acos = op1 $ \[x] => (acos x, \d => [-d / sqrt (1 - x * x)])
+atan = op1 $ \[x] => (atan x, \d => [d / (1 - x * x)])
+sinh = op1 $ \[x] => (sinh x, \d => [d * cosh x])
+cosh = op1 $ \[x] => (cosh x, \d => [d * sinh x])
+tanh = op1 $ \[x] => (tanh x, \d => let cosh' = cosh x in [d / (cosh' * cosh')])
 
 -- machine learning specific
 

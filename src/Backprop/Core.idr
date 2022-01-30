@@ -1,12 +1,16 @@
 module Backprop.Core
 
 import Backprop.CanBack
-import Backprop.Op
+import Backprop.MathUtils
 import Control.Optics
 import Linear.HList
 import public Data.List.Quantifiers
 
 %hide Data.Morphisms.Op
+
+public export
+Op : (args : List Type) -> (o : Type) -> Type
+Op args o = HList args -> Pair o (o -> HList args)
 
 export
 data Node : (i : Type) -> (o : Type) -> Type where
@@ -25,10 +29,18 @@ export
 op : {args : _} -> All CanBack args => Op args o -> All (Node i) args -> Node i o
 op = Oper
 
+export
+op1 : {a1 : _} -> CanBack a1 => Op [a1] o -> Node i a1 -> Node i o
+op1 op x = Oper op [x]
+
+export
+op2 : {a1, a2 : _} -> CanBack a1 => CanBack a2 => Op [a1, a2] o -> Node i a1 -> Node i a2 -> Node i o
+op2 op x y = Oper op [x, y]
+
 ||| lift a constant into a `Node`
 export
 const : a -> Node i a
-const x = op (op_const x) []
+const x = op (\[] => (x, const [])) []
 
 export
 FromDouble a => FromDouble (Node i a) where
@@ -36,23 +48,23 @@ FromDouble a => FromDouble (Node i a) where
 
 export
 (a : _) => (CanBack a, Num a) => Num (Node i a) where
-  a + b = op op_add [a, b]
-  a * b = op op_mul [a, b]
+  (+) = op2 $ \[x, y] => (x + y, \d => [d, d])
+  (*) = op2 $ \[x, y] => (x * y, \d => [d * y, x * d])
   fromInteger = const . fromInteger
 
 export
 (a : _) => (CanBack a, Neg a) => Neg (Node i a) where
-  a - b = op op_sub [a, b]
-  negate a = op op_negate [a]
+  (-) = op2 $ \[x, y] => (x - y, \d => [d, -d])
+  negate = op1 $ \[x] => (-x, \d => [-d])
 
 export
 (a : _) => (CanBack a, Neg a, Fractional a) => Fractional (Node i a) where
-  a / b = op op_div [a, b]
-  recip a = op op_recip [a]
+  (/) = op2 $ \[x, y] => (x / y, \d => [d / y, -d * x / (y * y)])
+  recip = op1 $ \[x] => (recip x, \d => [-d / (x * x)])
 
 export
 (a : _) => (CanBack a, Ord a, Neg a, Abs a) => Abs (Node i a) where
-  abs a = op op_abs [a]
+  abs = op1 $ \[x] => (abs x, \d => [d * signum_zero x])
 
 mutual
   run_all : {as : _} -> {auto prf : All CanBack as} -> CanBack i => All (Node i) as -> i -> (HList as, All (\b => b -> i -> i) as)
@@ -70,7 +82,7 @@ mutual
   run (Oper op arg_nodes) input =
     let
       (args, backs) = run_all arg_nodes input
-      (output, back) = do_op op args
+      (output, back) = op args
     in
       (output, combine_all backs . back)
 
@@ -96,4 +108,4 @@ mutual
   export
   eval : Node i o -> i -> o
   eval Input input = input
-  eval (Oper op args) input = fst $ do_op op (eval_all args input)
+  eval (Oper op args) input = fst $ op (eval_all args input)
