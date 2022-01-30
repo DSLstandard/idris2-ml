@@ -1,6 +1,6 @@
 module Backprop
 
 import public Backprop.CanBack
-import public Backprop.Core
 import public Backprop.Math
+import public Backprop.Node
 import public Data.List.Quantifiers

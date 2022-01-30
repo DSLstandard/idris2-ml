@@ -1,9 +1,9 @@
-module Backprop.Core
+module Backprop.Node
 
 import Backprop.CanBack
 import Backprop.MathUtils
 import Control.Optics
-import Linear.HList
+import Data.Floating
 import public Data.List.Quantifiers
 
 %hide Data.Morphisms.Op
@@ -19,15 +19,25 @@ data Node : (i : Type) -> (o : Type) -> Type where
   ||| an operation
   Oper : {args : _} -> All CanBack args => Op args o -> All (Node i) args -> Node i o
 
-||| get input
+public export
+interface Functor f => NodeDistributive f where
+  collect : {o : _} -> CanBack o => f (Node i o) -> Node i (f o)
+
+public export
+interface Functor f => NodeTraversable f where
+  sequence : {o : _} -> CanBack o => Node i (f o) -> f (Node i o)
+
+public export
+NodeFunctor : (Type -> Type) -> Type
+NodeFunctor f = (NodeTraversable f, NodeDistributive f)
+
+export
+map : {a, b : _} -> (CanBack a, CanBack b, NodeFunctor f) => (Node i a -> Node i b) -> Node i (f a) -> Node i (f b)
+map f = collect . map f . sequence
+
 export
 input : Node a a
 input = Input
-
-||| lift an operation into a `Node`
-export
-op : {args : _} -> All CanBack args => Op args o -> All (Node i) args -> Node i o
-op = Oper
 
 export
 op1 : {a1 : _} -> CanBack a1 => Op [a1] o -> Node i a1 -> Node i o
@@ -40,31 +50,52 @@ op2 op x y = Oper op [x, y]
 ||| lift a constant into a `Node`
 export
 const : a -> Node i a
-const x = op (\[] => (x, const [])) []
+const x = Oper (\[] => (x, const [])) []
 
 export
 FromDouble a => FromDouble (Node i a) where
   fromDouble = const . fromDouble
 
 export
-(a : _) => (CanBack a, Num a) => Num (Node i a) where
+{a : _} -> (CanBack a, Num a) => Num (Node i a) where
   (+) = op2 $ \[x, y] => (x + y, \d => [d, d])
   (*) = op2 $ \[x, y] => (x * y, \d => [d * y, x * d])
   fromInteger = const . fromInteger
 
 export
-(a : _) => (CanBack a, Neg a) => Neg (Node i a) where
+{a : _} -> (CanBack a, Neg a) => Neg (Node i a) where
   (-) = op2 $ \[x, y] => (x - y, \d => [d, -d])
   negate = op1 $ \[x] => (-x, \d => [-d])
 
 export
-(a : _) => (CanBack a, Neg a, Fractional a) => Fractional (Node i a) where
+{a : _} -> (CanBack a, Ord a, Neg a, Abs a) => Abs (Node i a) where
+  abs = op1 $ \[x] => (abs x, \d => [d * signum_zero x])
+
+export
+{a : _} -> (CanBack a, Neg a, Fractional a) => Fractional (Node i a) where
   (/) = op2 $ \[x, y] => (x / y, \d => [d / y, -d * x / (y * y)])
   recip = op1 $ \[x] => (recip x, \d => [-d / (x * x)])
 
 export
-(a : _) => (CanBack a, Ord a, Neg a, Abs a) => Abs (Node i a) where
-  abs = op1 $ \[x] => (abs x, \d => [d * signum_zero x])
+{a : _} -> (CanBack a, Neg a, Floating a, Fractional (Node i a)) => Floating (Node i a) where
+  pi = const pi
+  sqrt = op1 $ \[x] => (sqrt x, \d => [d / (2 * sqrt x)])
+  exp = op1 $ \[x] => (exp x, \d => [d * exp x])
+  ln = op1 $ \[x] => (ln x, \d => [d / x])
+  log base x = ln x / ln base
+  pow = op2 $ \[x, y] =>
+    ( pow x y
+    , \d => let k = d * pow x (y - 1) in [k * y, k * x * ln x]
+    )
+  sin = op1 $ \[x] => (sin x, \d => [d * cos x])
+  cos = op1 $ \[x] => (cos x, \d => [d * -sin x])
+  tan = op1 $ \[x] => (tan x, \d => let cos' = cos x in [d / (cos' * cos')])
+  asin = op1 $ \[x] => (asin x, \d => [d / sqrt (1 - x * x)])
+  acos = op1 $ \[x] => (acos x, \d => [-d / sqrt (1 - x * x)])
+  atan = op1 $ \[x] => (atan x, \d => [d / (1 - x * x)])
+  sinh = op1 $ \[x] => (sinh x, \d => [d * cosh x])
+  cosh = op1 $ \[x] => (cosh x, \d => [d * sinh x])
+  tanh = op1 $ \[x] => (tanh x, \d => let cosh' = cosh x in [d / (cosh' * cosh')])
 
 mutual
   run_all : {as : _} -> {auto prf : All CanBack as} -> CanBack i => All (Node i) as -> i -> (HList as, All (\b => b -> i -> i) as)

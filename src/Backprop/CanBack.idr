@@ -1,5 +1,7 @@
 module Backprop.CanBack
 
+import Data.Vect
+
 ||| an interface used for manipulating gradient values of type `a` when backpropagating
 public export
 interface CanBack a where
@@ -11,7 +13,7 @@ interface CanBack a where
   add : a -> a -> a
 
 export
-Num a => CanBack a where
+CanBack Double where
   one = 1
   zero = 0
   add = (+)
